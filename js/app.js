@@ -12,6 +12,7 @@
   var ORDEN_DIAS = [1, 2, 3, 4, 5, 6, 0];
   var NOMBRE_DIA = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
   var NIVELES = [
+    { n: 0, txt: 'Sin dar', titulo: 'Aún no lo hemos dado en clase' },
     { n: 1, txt: 'Lo domino' },
     { n: 2, txt: 'Regular' },
     { n: 3, txt: 'Me cuesta' }
@@ -277,22 +278,20 @@
     var html = '<div class="titulo-vista"><div><h2>' + (estado.nombre ? '¡Hola, ' + esc(estado.nombre) + '!' : '¡Hola!') + '</h2>' +
       '<p class="suave">' + esc(fmtLargo(h)) + '</p></div></div>';
 
-    var valorados = 0;
-    estado.asignaturas.forEach(function (id) { valorados += Object.keys(estado.niveles[id] || {}).length; });
     var pasos = [
       { ok: estado.asignaturas.length > 0, txt: 'Elige las asignaturas que cursas', vista: 'asignaturas', boton: 'Elegir' },
-      { ok: valorados > 0, txt: 'Valora cómo llevas cada tema', vista: 'asignaturas', boton: 'Valorar' },
       { ok: !!estado.horarioRevisado, txt: 'Indica tus horas libres para estudiar', vista: 'horario', boton: 'Horario' },
       { ok: estado.examenes.length > 0, txt: 'Añade tu próximo examen y los temas que entran', vista: 'examenes', boton: 'Añadir' }
     ];
     if (pasos.some(function (p) { return !p.ok; })) {
-      html += '<div class="tarjeta"><h3>Configura tu plan en 4 pasos</h3><div class="pasos">' + pasos.map(function (p) {
+      html += '<div class="tarjeta"><h3>Configura tu plan en 3 pasos</h3><div class="pasos">' + pasos.map(function (p) {
         return '<div class="paso' + (p.ok ? ' hecho' : '') + '"><span>' + p.txt + '</span>' +
           (p.ok ? '' : '<button class="boton pequeno primario" data-ir="' + p.vista + '">' + p.boton + '</button>') + '</div>';
       }).join('') + '</div></div>';
     }
 
     html += htmlAvisos();
+    html += htmlPorValorar();
 
     var sesiones = sesionesPlan();
     var deHoy = sesiones.filter(function (s) { return s.fecha === h; });
@@ -330,6 +329,30 @@
         '<div class="estadistica"><b>' + horas(min) + '</b><span>de estudio</span></div></div>';
     }
     return html;
+  }
+
+  // Temas «Sin dar» que el plan va a trabajar en los próximos días: buen momento para valorarlos.
+  function htmlPorValorar() {
+    var h = hoy();
+    if (estado.ocultarValorarHasta && estado.ocultarValorarHasta >= h) return '';
+    var limite = F.sumar(h, 7);
+    var vistos = {}, lista = [];
+    sesionesPlan().forEach(function (s) {
+      if (!s.temaId || s.fecha < h || s.fecha > limite || estado.hechas[s.id]) return;
+      var clave = s.asignaturaId + '|' + s.temaId;
+      if (vistos[clave] || nivelDe(s.asignaturaId, s.temaId)) return;
+      vistos[clave] = true;
+      var tema = temasDe(s.asignaturaId).filter(function (t) { return t.id === s.temaId; })[0];
+      if (tema) lista.push({ asig: s.asignaturaId, tema: tema, fecha: s.fecha });
+    });
+    if (!lista.length) return '';
+    return '<div class="tarjeta" style="border-color:var(--azul)"><h3>¿Ya habéis dado estos temas?</h3>' +
+      '<p class="suave pequeno">Vas a trabajarlos esta semana. Si ya los habéis dado en clase, dime cómo los llevas y ajusto el tiempo. Si todavía no, déjalos en «Sin dar».</p>' +
+      lista.slice(0, 6).map(function (x) {
+        return '<div class="tema-fila"><span class="nombre">' + chipAsig(asignatura(x.asig)) + ' ' + esc(x.tema.nombre) +
+          '<br><span class="suave pequeno">Primera sesión: ' + esc(fmtCorto(x.fecha)) + '</span></span>' + htmlNivel(x.asig, x.tema.id) + '</div>';
+      }).join('') +
+      '<div class="botones" style="margin-top:10px"><button class="boton pequeno" data-accion="ocultar-valorar">Ahora no</button></div></div>';
   }
 
   function htmlExamenTarjeta(e) {
@@ -480,7 +503,7 @@
           '<label class="campo"><span>Empezar a prepararlo el</span><input type="date" id="ed-inicio" value="' + esc(ed.inicio) + '"><small>Desde cuándo quieres que el plan incluya este examen.</small></label>' +
         '</div>' +
         '<div class="campo"><span>¿Qué temas entran? ¿Cómo los llevas?</span>' +
-          '<small>Marca los temas del examen y valora cada uno: el plan dará más tiempo a lo que te cuesta.</small></div>' +
+          '<small>Marca los temas que entran. Si ya los habéis dado, valóralos: el plan dará más tiempo a lo que te cuesta. Los que aún no habéis dado, déjalos en «Sin dar».</small></div>' +
         '<div id="ed-temas">' + htmlTemasEditor() + '</div>' +
         '<div class="campo" style="margin-top:12px"><span>¿Falta algún tema?</span>' +
           '<div class="botones"><input type="text" id="ed-nuevo-tema" placeholder="Nombre del tema" style="flex:1 1 200px">' +
@@ -502,7 +525,7 @@
   function htmlNivel(asigId, temaId) {
     var n = nivelDe(asigId, temaId);
     return '<div class="nivel" role="group" aria-label="¿Cómo llevas este tema?">' + NIVELES.map(function (o) {
-      return '<button type="button" class="n' + o.n + (n === o.n ? ' activo' : '') + '" data-accion="nivel" data-asig="' + asigId +
+      return '<button type="button" class="n' + o.n + (n === o.n ? ' activo' : '') + '"' + (o.titulo ? ' title="' + o.titulo + '"' : '') + ' data-accion="nivel" data-asig="' + asigId +
         '" data-tema="' + esc(temaId) + '" data-n="' + o.n + '" aria-pressed="' + (n === o.n) + '">' + o.txt + '</button>';
     }).join('') + '</div>';
   }
@@ -569,7 +592,7 @@
   /* --------------------------- Asignaturas ---------------------------- */
 
   function vistaAsignaturas() {
-    var html = '<div class="titulo-vista"><div><h2>Asignaturas</h2><p class="suave">Elige las que cursas y valora cómo llevas cada tema.</p></div></div>';
+    var html = '<div class="titulo-vista"><div><h2>Asignaturas</h2><p class="suave">Elige las que cursas y valora los temas que ya habéis dado.</p></div></div>';
     html += '<div class="tarjeta"><h3>¿Qué asignaturas cursas?</h3><div class="asig-grid">' + C.asignaturas.map(function (a) {
       var activa = estado.asignaturas.indexOf(a.id) >= 0;
       return '<button class="asig-opcion' + (activa ? ' activa' : '') + '" data-accion="toggle-asig" data-id="' + a.id + '" aria-pressed="' + activa + '">' +
@@ -580,14 +603,15 @@
     if (!estado.asignaturas.length) return html;
 
     html += '<h3 style="margin-top:22px">¿Cómo llevas cada tema?</h3>' +
-      '<p class="suave pequeno">Sé sincero/a: es lo que más ayuda al plan. Los temas sin valorar cuentan como «Regular».</p>';
+      '<div class="aviso info pequeno">No hace falta valorarlo todo ahora. Valora solo los temas que ya habéis dado en clase; el resto déjalos en «Sin dar» ' +
+      '(el plan les da un tiempo normal). Cuando vayas a estudiar un tema sin valorar, te lo preguntaré en la pantalla Hoy.</div>';
     estado.asignaturas.forEach(function (id) {
       var a = asignatura(id);
       var temas = temasDe(id);
-      var valorados = temas.filter(function (t) { return nivelDe(id, t.id); }).length;
+
       html += '<details class="tarjeta asig-panel" data-asig="' + id + '"' + (ui.asigAbierta === id ? ' open' : '') + '>' +
         '<summary><span class="punto" style="width:14px;height:14px;border-radius:50%;background:' + a.color + '"></span>' +
-        '<span><b>' + esc(a.nombre) + '</b><br><span class="suave pequeno" data-contador="' + id + '">' + valorados + ' de ' + temas.length + ' temas valorados</span></span></summary>' +
+        '<span><b>' + esc(a.nombre) + '</b><br><span class="suave pequeno" data-contador="' + id + '">' + textoContador(id) + '</span></span></summary>' +
         '<div class="asig-panel-cuerpo">' +
         bloquesDe(id).map(function (b) {
           return '<div class="bloque-temas"><h4>' + esc(b.nombre) + '</h4>' + b.temas.map(function (t) {
@@ -613,22 +637,25 @@
       '<a class="boton pequeno" href="' + esc(a.pdf) + '" target="_blank" rel="noopener">Ver directrices oficiales (PDF)</a></div>';
   }
 
+  function textoContador(asigId) {
+    var temas = temasDe(asigId);
+    var valorados = temas.filter(function (t) { return nivelDe(asigId, t.id); }).length;
+    return valorados + ' valorados · ' + (temas.length - valorados) + ' sin dar';
+  }
+
   function ponerNivel(asigId, temaId, n, boton) {
     estado.niveles[asigId] = estado.niveles[asigId] || {};
-    estado.niveles[asigId][temaId] = n;
+    if (n) estado.niveles[asigId][temaId] = n;
+    else delete estado.niveles[asigId][temaId];
     guardar();
-    // Actualización en el sitio para no perder la posición de la pantalla.
-    var grupo = boton.parentNode;
-    grupo.querySelectorAll('button').forEach(function (b) {
+    // Actualización en el sitio (el mismo tema puede aparecer en varios sitios de la pantalla).
+    document.querySelectorAll('[data-accion="nivel"][data-asig="' + asigId + '"][data-tema="' + temaId + '"]').forEach(function (b) {
       var activo = +b.getAttribute('data-n') === n;
       b.classList.toggle('activo', activo);
       b.setAttribute('aria-pressed', activo);
     });
     var cont = document.querySelector('[data-contador="' + asigId + '"]');
-    if (cont) {
-      var temas = temasDe(asigId);
-      cont.textContent = temas.filter(function (t) { return nivelDe(asigId, t.id); }).length + ' de ' + temas.length + ' temas valorados';
-    }
+    if (cont) cont.textContent = textoContador(asigId);
     planPendiente = true;
     clearTimeout(temporizadorPlan);
     temporizadorPlan = setTimeout(aplicarPlanPendiente, 800);
@@ -837,6 +864,7 @@
         render();
         break;
       case 'cerrar-perdidas': ui.perdidas = 0; render(); break;
+      case 'ocultar-valorar': estado.ocultarValorarHasta = hoy(); guardar(); render(); break;
       case 'reorganizar': replanificar(); render(); avisar('Plan reorganizado.'); break;
       case 'exportar': abrirExportar(); break;
       case 'exp-ics': exportarIcs(); break;

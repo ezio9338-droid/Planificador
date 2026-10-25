@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Rumbo PAU · Planificador de estudio</title>
+  <meta name="description" content="Planificador de estudio para 2º de Bachillerato basado en las directrices PAU de Andalucía.">
+  <meta name="theme-color" content="#2d3363">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Rumbo PAU">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="img/icono.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
+  <link rel="stylesheet" href="css/estilos.css">
+</head>
+<body>
+  <div class="app" id="app">
+    <header class="cabecera">
+      <div class="marca">
+        <svg class="marca-icono" viewBox="0 0 64 64" aria-hidden="true"><use href="#icono-rumbo"/></svg>
+        <div>
+          <h1>Rumbo PAU</h1>
+          <p class="marca-sub">Tu plan de estudio, día a día</p>
+        </div>
+      </div>
+    </header>
+
+    <nav class="navegacion" id="navegacion" aria-label="Secciones">
+      <button data-vista="hoy" class="activo"><svg viewBox="0 0 24 24"><use href="#i-hoy"/></svg><span>Hoy</span></button>
+      <button data-vista="plan"><svg viewBox="0 0 24 24"><use href="#i-plan"/></svg><span>Plan</span></button>
+      <button data-vista="examenes"><svg viewBox="0 0 24 24"><use href="#i-examen"/></svg><span>Exámenes</span></button>
+      <button data-vista="asignaturas"><svg viewBox="0 0 24 24"><use href="#i-libro"/></svg><span>Asignaturas</span></button>
+      <button data-vista="horario"><svg viewBox="0 0 24 24"><use href="#i-reloj"/></svg><span>Horario</span></button>
+      <button data-vista="mas"><svg viewBox="0 0 24 24"><use href="#i-mas"/></svg><span>Más</span></button>
+    </nav>
+
+    <main class="contenido" id="vista" tabindex="-1"></main>
+  </div>
+
+  <dialog id="dialogo" class="dialogo"></dialog>
+  <div id="aviso-flotante" class="aviso-flotante" role="status" aria-live="polite"></div>
+  <div id="impresion" class="impresion"></div>
+
+  <!-- Iconos -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="icono-rumbo" viewBox="0 0 64 64">
+      <circle cx="32" cy="32" r="30" fill="#2d3363"/>
+      <circle cx="32" cy="32" r="23" fill="none" stroke="#fff" stroke-width="2.5" opacity=".35"/>
+      <path d="M32 11 L39 32 L32 53 L25 32 Z" fill="#fff"/>
+      <path d="M32 11 L39 32 L25 32 Z" fill="#3fae3f"/>
+      <circle cx="32" cy="32" r="3.5" fill="#2d3363"/>
+    </symbol>
+    <symbol id="i-hoy" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 3v2M12 19v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M3 12h2M19 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
+    <symbol id="i-plan" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="16" rx="2.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M7.5 13.5h3M13.5 13.5h3M7.5 17h3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+    <symbol id="i-examen" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="M6 2.5h8.5L19 7v14.5H6z"/><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M14 2.5V7h5M9 12h6M9 16h4"/></symbol>
+    <symbol id="i-libro" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="M4 5.5C6.5 4 9.5 4 12 5.5v14C9.5 18 6.5 18 4 19.5zM20 5.5C17.5 4 14.5 4 12 5.5v14c2.5-1.5 5.5-1.5 8 0z"/></symbol>
+    <symbol id="i-reloj" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 7v5l3.5 2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+    <symbol id="i-mas" viewBox="0 0 24 24"><circle cx="5" cy="12" r="2" fill="currentColor"/><circle cx="12" cy="12" r="2" fill="currentColor"/><circle cx="19" cy="12" r="2" fill="currentColor"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  </svg>
+
+  <script src="js/catalogo.js"></script>
+  <script src="js/planificador.js"></script>
+  <script src="js/exportar.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

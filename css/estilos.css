@@ -228,13 +228,14 @@ details.asig-panel[open] > summary::after { transform: rotate(-90deg); }
 .tema-fila input[type=checkbox] { width: 22px; height: 22px; accent-color: var(--verde); flex: none; }
 
 .nivel { display: inline-flex; border: 1px solid var(--borde); border-radius: 10px; overflow: hidden; flex: none; }
-.nivel button { border: 0; background: var(--tarjeta); padding: 0 9px; min-height: 36px; font-size: .82rem; font-weight: 600; color: var(--texto-suave); }
+.nivel button { border: 0; background: var(--tarjeta); padding: 0 10px; min-height: 36px; font-size: .82rem; font-weight: 600; color: var(--texto-suave); }
 .nivel button + button { border-left: 1px solid var(--borde); }
-.nivel button.n0.activo { background: var(--azul-suave); color: var(--azul); }
 .nivel button.n1.activo { background: var(--verde); color: #fff; }
 .nivel button.n2.activo { background: #c98a12; color: #fff; }
 .nivel button.n3.activo { background: var(--rojo); color: #fff; }
 
+.tema-fila.ed .nivel { display: none; }
+.tema-fila.ed.marcado .nivel { display: inline-flex; }
 .info-examen ul { padding-left: 1.2em; margin: .4rem 0; }
 .info-examen li { margin: .25rem 0; }
 

@@ -38,7 +38,8 @@
         semanal: { 1: tarde.slice(), 2: tarde.slice(), 3: tarde.slice(), 4: tarde.slice(), 5: [{ ini: '16:00', fin: '17:30' }], 6: [{ ini: '10:30', fin: '13:00' }], 0: [{ ini: '17:00', fin: '19:00' }] },
         excepciones: {}
       },
-      ajustes: { sesion: 50, descanso: 10, alarma: true },
+      ajustes: { sesion: 50, descanso: 10, alarma: true, inicioTarde: '17:00', inicioFinde: '10:30' },
+      aplazadas: {},
       hechas: {},
       plan: null,
       horarioRevisado: false
@@ -52,6 +53,7 @@
         var e = JSON.parse(txt);
         var base = estadoInicial();
         Object.keys(base).forEach(function (k) { if (e[k] === undefined) e[k] = base[k]; });
+        Object.keys(base.ajustes).forEach(function (k) { if (e.ajustes[k] === undefined) e.ajustes[k] = base.ajustes[k]; });
         return e;
       }
     } catch (err) { /* sin almacenamiento disponible */ }
@@ -173,6 +175,8 @@
       return idsEx[s.examenId] && estado.hechas[s.id] && s.fecha <= h;
     });
     var ocupadoHoy = conservar.filter(function (s) { return s.fecha === h; }).map(function (s) { return [s.ini, s.fin]; });
+    // Los aplazamientos solo valen para el día en que se hicieron.
+    Object.keys(estado.aplazadas).forEach(function (id) { if (estado.aplazadas[id] !== h) delete estado.aplazadas[id]; });
     var res = P.generar({
       hoy: h,
       ahora: ahora.getHours() * 60 + ahora.getMinutes(),
@@ -181,7 +185,8 @@
       sesion: estado.ajustes.sesion,
       descanso: estado.ajustes.descanso,
       hechas: estado.hechas,
-      ocupadoHoy: ocupadoHoy
+      ocupadoHoy: ocupadoHoy,
+      noHoy: Object.keys(estado.aplazadas)
     });
     var sesiones = conservar.concat(res.sesiones).sort(function (a, b) {
       return a.fecha === b.fecha ? (a.ini < b.ini ? -1 : 1) : (a.fecha < b.fecha ? -1 : 1);
@@ -220,9 +225,46 @@
     return { hechas: hechas, total: total, pct: total ? Math.round(100 * hechas / total) : 0 };
   }
 
+  function sugerencia() {
+    return P.sugerirHorario({
+      hoy: hoy(),
+      examenes: estado.examenes.map(examenParaPlan),
+      sesion: estado.ajustes.sesion,
+      descanso: estado.ajustes.descanso,
+      inicioTarde: estado.ajustes.inicioTarde,
+      inicioFinde: estado.ajustes.inicioFinde
+    });
+  }
+
+  // Sustituye la semana tipo por la sugerida. Devuelve la sugerencia aplicada (o null).
+  // Los días especiales propuestos por la app se marcan como «sugeridos» para poder renovarlos
+  // sin tocar los que ha puesto el alumno (días libres, horarios distintos…).
+  function aplicarSugerencia() {
+    var sug = sugerencia();
+    if (!sug) return null;
+    var disp = estado.disponibilidad;
+    disp.semanal = sug.semanal;
+    disp.sugeridos = disp.sugeridos || {};
+    Object.keys(disp.sugeridos).forEach(function (d) { delete disp.excepciones[d]; });
+    disp.sugeridos = {};
+    Object.keys(sug.especiales).forEach(function (d) {
+      if (disp.excepciones[d]) return;
+      disp.excepciones[d] = sug.especiales[d];
+      disp.sugeridos[d] = true;
+    });
+    return sug;
+  }
+
+  function textoSugerencia(sug) {
+    var n = Object.keys(sug.especiales).length;
+    return sug.bloquesDia + (sug.bloquesDia === 1 ? ' sesión' : ' sesiones') + ' de ' + estado.ajustes.sesion + ' min al día (' + horas(sug.minutosDia) + ')' +
+      (n ? ' y algo más de tiempo ' + n + (n === 1 ? ' día' : ' días') + ' antes de los exámenes' : '');
+  }
+
   /* ============================== Render ============================== */
 
   function render() {
+    asegurarPlan();
     document.querySelectorAll('#navegacion button').forEach(function (b) {
       b.classList.toggle('activo', b.getAttribute('data-vista') === vista);
       if (b.getAttribute('data-vista') === vista) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
@@ -245,12 +287,14 @@
   function htmlSesion(s, conFecha) {
     var a = asignatura(s.asignaturaId);
     var hecha = !!estado.hechas[s.id];
+    var aplazable = !hecha && s.fecha === hoy();
     return '<div class="sesion' + (hecha ? ' hecha' : '') + '">' +
       '<div class="franja-color" style="background:' + a.color + '"></div>' +
       '<div>' +
         '<div class="meta"><span class="hora">' + (conFecha ? esc(fmtCorto(s.fecha)) + ' · ' : '') + esc(s.ini) + '–' + esc(s.fin) + '</span>' + chipAsig(a) + '</div>' +
         '<div class="tit">' + esc(s.titulo) + '</div>' +
         '<div class="det">' + esc(s.detalle) + '</div>' +
+        (aplazable ? '<button class="boton pequeno" style="margin-top:8px" data-accion="aplazar" data-id="' + esc(s.id) + '">No puedo hoy: aplazar</button>' : '') +
       '</div>' +
       '<button class="check" data-accion="hecha" data-id="' + esc(s.id) + '" aria-pressed="' + hecha + '" aria-label="' + (hecha ? 'Marcar como pendiente' : 'Marcar como hecha') + '">' +
         '<svg viewBox="0 0 24 24"><use href="#i-check"/></svg></button>' +
@@ -265,7 +309,8 @@
         '<button class="boton pequeno" data-accion="cerrar-perdidas">Entendido</button></div>';
     }
     ((estado.plan && estado.plan.avisos) || []).forEach(function (a) {
-      out += '<div class="aviso ' + a.nivel + '">' + esc(a.texto) + '</div>';
+      out += '<div class="aviso ' + a.nivel + '">' + esc(a.texto) +
+        (a.nivel === 'alto' ? ' <button class="boton pequeno" data-ir="horario">Ver horario sugerido</button>' : '') + '</div>';
     });
     return out;
   }
@@ -278,8 +323,8 @@
       '<p class="suave">' + esc(fmtLargo(h)) + '</p></div></div>';
 
     var pasos = [
-      { ok: !!estado.horarioRevisado, txt: 'Indica tus horas libres para estudiar', vista: 'horario', boton: 'Horario' },
-      { ok: estado.examenes.length > 0, txt: 'Añade los exámenes de tu próximo periodo y los temas que entran', vista: 'examenes', boton: 'Añadir' }
+      { ok: estado.examenes.length > 0, txt: 'Añade los exámenes de tu próximo periodo y los temas que entran', vista: 'examenes', boton: 'Añadir' },
+      { ok: !!estado.horarioRevisado, txt: 'Revisa el horario de estudio que te propongo y cámbialo si lo necesitas', vista: 'horario', boton: 'Revisar' }
     ];
     var hayProximos = estado.examenes.some(function (e) { return e.fecha >= h; });
     if (pasos.some(function (p) { return !p.ok; })) {
@@ -599,10 +644,13 @@
       inicioManual: ed.inicioManual,
       temas: ed.temas
     };
+    var sugerida = null;
     cambiarPlan(function () {
       var i = estado.examenes.findIndex(function (e) { return e.id === datos.id; });
       if (i >= 0) estado.examenes[i] = datos; else estado.examenes.push(datos);
       if (estado.asignaturas.indexOf(datos.asignaturaId) < 0) estado.asignaturas.push(datos.asignaturaId);
+      // Mientras el alumno no haya revisado su horario, se le propone uno según sus exámenes.
+      if (!estado.horarioRevisado) sugerida = aplicarSugerencia();
     });
     ui.ultimaFecha = datos.fecha;
     if (otro) {
@@ -612,7 +660,8 @@
       return;
     }
     document.getElementById('dialogo').close();
-    avisar(ed.id ? 'Examen actualizado. Plan reorganizado.' : 'Examen añadido. ¡Tu plan está listo!');
+    avisar(sugerida ? 'Te propongo ' + textoSugerencia(sugerida) + '. Revísalo en Horario.'
+      : (ed.id ? 'Examen actualizado. Plan reorganizado.' : 'Examen añadido. ¡Tu plan está listo!'));
   }
 
   function borrarExamen(id) {
@@ -692,10 +741,20 @@
     var d = estado.disponibilidad;
     var min = P.minutosSemana(d);
     var html = '<div class="titulo-vista"><div><h2>Horario de estudio</h2><p class="suave">Indica las franjas en las que puedes estudiar cada día. El plan solo usará esas horas.</p></div></div>';
+    var sug = sugerencia();
     if (!estado.horarioRevisado) {
-      html += '<div class="aviso info">Hemos puesto un horario de ejemplo. Ajústalo a tu semana real (extraescolares, academia, deporte…) y pulsa «Mi horario está listo».' +
+      html += '<div class="aviso info">' + (sug && estado.examenes.length
+        ? 'Este horario te lo propongo yo según tus exámenes. Cámbialo si no te viene bien (extraescolares, academia, deporte…) y pulsa «Mi horario está listo».'
+        : 'Cuando añadas tus exámenes te propondré un horario. Mientras, puedes ajustar este de ejemplo.') +
         ' <button class="boton pequeno primario" data-accion="horario-ok">Mi horario está listo</button></div>';
     }
+    html += '<div class="tarjeta"><h3>Horario sugerido</h3>' +
+      (sug ? '<p>Para tus próximos exámenes te recomiendo <b>' + textoSugerencia(sug) + '</b>.</p>'
+        : '<p class="suave">Añade tus exámenes y calcularé cuánto necesitas estudiar.</p>') +
+      '<div class="botones" style="align-items:center;margin:8px 0"><span>Suelo empezar a estudiar a las</span>' +
+      '<input type="time" data-campo="inicioTarde" value="' + esc(estado.ajustes.inicioTarde) + '" aria-label="Hora de inicio entre semana"><span>entre semana y a las</span>' +
+      '<input type="time" data-campo="inicioFinde" value="' + esc(estado.ajustes.inicioFinde) + '" aria-label="Hora de inicio el fin de semana"><span>el fin de semana.</span></div>' +
+      (sug ? '<button class="boton azul" data-accion="sugerir-horario">Usar el horario sugerido</button>' : '') + '</div>';
     html += '<div class="tarjeta"><h3>Semana tipo <span class="chip" style="margin-left:6px">' + horas(min) + ' a la semana</span></h3>';
     ORDEN_DIAS.forEach(function (dia) {
       var franjas = d.semanal[dia] || [];
@@ -726,12 +785,13 @@
       }).join('') + '</div></div></div></div>';
 
     // Días especiales
-    var exc = Object.keys(d.excepciones).sort();
+    var exc = Object.keys(d.excepciones).filter(function (f) { return f >= hoy(); }).sort();
     html += '<div class="tarjeta"><h3>Días especiales</h3><p class="suave pequeno">Días sin estudio (viajes, cumpleaños, otros exámenes…) o con un horario distinto al habitual.</p>';
     if (exc.length) {
       html += exc.map(function (f) {
         var fr = d.excepciones[f];
-        return '<div class="tema-fila"><span class="nombre">' + esc(fmtLargo(f)) + '</span>' +
+        var sugerido = d.sugeridos && d.sugeridos[f];
+        return '<div class="tema-fila"><span class="nombre">' + esc(fmtLargo(f)) + (sugerido ? ' <span class="chip">Sugerido</span>' : '') + '</span>' +
           '<span class="suave">' + (fr.length ? fr.map(function (x) { return esc(x.ini + '–' + x.fin); }).join(', ') : 'Sin estudio') + '</span>' +
           '<button class="boton pequeno peligro" data-accion="quitar-excepcion" data-fecha="' + f + '">Quitar</button></div>';
       }).join('');
@@ -882,6 +942,18 @@
         render();
         break;
       case 'cerrar-perdidas': ui.perdidas = 0; render(); break;
+      case 'aplazar':
+        estado.aplazadas[id] = hoy();
+        replanificar();
+        render();
+        var nueva = sesionesPlan().filter(function (x) { return x.id === id; })[0];
+        avisar(nueva ? 'Aplazada al ' + fmtCorto(nueva.fecha) + ' a las ' + nueva.ini + '.' : 'Aplazada. No he encontrado hueco: revisa los avisos.');
+        break;
+      case 'sugerir-horario':
+        if (estado.horarioRevisado && !confirm('Se sustituirá tu semana tipo por el horario sugerido. ¿Continuar?')) break;
+        cambiarPlan(function () { aplicarSugerencia(); });
+        avisar('Horario sugerido aplicado. Puedes retocarlo cuando quieras.');
+        break;
       case 'ocultar-valorar': estado.ocultarValorarHasta = hoy(); guardar(); render(); break;
       case 'reorganizar': replanificar(); render(); avisar('Plan reorganizado.'); break;
       case 'exportar': abrirExportar(); break;
@@ -984,11 +1056,16 @@
         cambiarPlan(function () {
           for (var d = desde; d <= hasta; d = F.sumar(d, 1)) {
             estado.disponibilidad.excepciones[d] = tipo === 'especial' ? [{ ini: ei, fin: ef }] : [];
+            if (estado.disponibilidad.sugeridos) delete estado.disponibilidad.sugeridos[d];
           }
         });
         break;
       case 'quitar-excepcion':
-        cambiarPlan(function () { delete estado.disponibilidad.excepciones[el.getAttribute('data-fecha')]; });
+        cambiarPlan(function () {
+          var fq = el.getAttribute('data-fecha');
+          delete estado.disponibilidad.excepciones[fq];
+          if (estado.disponibilidad.sugeridos) delete estado.disponibilidad.sugeridos[fq];
+        });
         break;
       case 'copia-descargar':
         var copia = JSON.parse(JSON.stringify(estado));
@@ -1011,6 +1088,12 @@
     if (campo === 'verPasados') { ui.verPasados = el.checked; render(); return; }
     if (campo === 'nombre') { estado.nombre = el.value.trim(); guardar(); avisar('Guardado.'); return; }
     if (campo === 'alarma') { estado.ajustes.alarma = el.checked; guardar(); return; }
+    if ((campo === 'inicioTarde' || campo === 'inicioFinde') && el.value) {
+      estado.ajustes[campo] = el.value;
+      guardar();
+      render();
+      return;
+    }
     if (el.id === 'ed-asig') {
       leerEditor();
       ui.editor.asignaturaId = el.value;
@@ -1083,8 +1166,14 @@
 
   /* ============================== Inicio ============================== */
 
-  asegurarPlan();
   render();
+
+  // Con la app abierta (habitual en el iPad), se comprueba cada minuto si ha cambiado el día.
+  setInterval(function () {
+    var antes = estado.plan && estado.plan.generado;
+    asegurarPlan();
+    if (estado.plan && estado.plan.generado !== antes && !document.getElementById('dialogo').open) render();
+  }, 60000);
 
   if ('serviceWorker' in navigator && /^https?:/.test(location.protocol)) {
     window.addEventListener('load', function () {

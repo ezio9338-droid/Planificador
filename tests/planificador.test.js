@@ -136,4 +136,44 @@ prueba('recorta las franjas de hoy que ya han pasado', function () {
   });
 });
 
+prueba('nunca programa antes de la fecha de inicio, aunque falte tiempo', function () {
+  var ex = examen('e1', 'mat2', '2026-11-25', ['primit', 'integdef', 'lim'], 3, { inicio: '2026-11-16' });
+  var r = P.generar({ hoy: '2026-11-04', examenes: [ex], disponibilidad: tardes, sesion: 50, descanso: 10, hechas: {} });
+  assert.ok(r.sesiones.length > 0);
+  r.sesiones.forEach(function (s) { assert.ok(s.fecha >= '2026-11-16', 'sesión el ' + s.fecha); });
+});
+
+prueba('las tareas aplazadas hoy pasan a mañana', function () {
+  var ex = examen('e1', 'mat2', '2026-11-20', ['primit'], 2);
+  var r1 = P.generar({ hoy: '2026-11-02', examenes: [ex], disponibilidad: tardes, sesion: 50, descanso: 10, hechas: {} });
+  var primera = r1.sesiones[0];
+  assert.strictEqual(primera.fecha, '2026-11-02');
+  var r2 = P.generar({ hoy: '2026-11-02', examenes: [ex], disponibilidad: tardes, sesion: 50, descanso: 10, hechas: {}, noHoy: [primera.id] });
+  var movida = r2.sesiones.filter(function (s) { return s.id === primera.id; })[0];
+  assert.ok(movida && movida.fecha > '2026-11-02', 'no se ha movido');
+});
+
+prueba('el horario sugerido da tiempo a preparar los exámenes', function () {
+  var exs = [
+    examen('e1', 'mat2', '2026-11-18', ['primit', 'integdef', 'deriv'], 3),
+    examen('e2', 'qui', '2026-11-19', ['redox', 'acidobase', 'equilibrio'], 2),
+    examen('e3', 'his', '2026-11-20', ['a2t1', 'a2t2', 'a2t3', 'a2t4', 'a2t5'], 2)
+  ];
+  exs.forEach(function (e) { e.inicio = P.fecha.sumar(e.fecha, -14); });
+  var sug = P.sugerirHorario({ hoy: '2026-11-04', examenes: exs, sesion: 50, descanso: 10 });
+  assert.ok(sug && sug.bloquesDia >= 1);
+  var r = P.generar({ hoy: '2026-11-04', examenes: exs, disponibilidad: { semanal: sug.semanal, excepciones: sug.especiales }, sesion: 50, descanso: 10, hechas: {} });
+  assert.strictEqual(r.avisos.filter(function (a) { return a.nivel === 'alto'; }).length, 0, JSON.stringify(r.avisos));
+});
+
+prueba('el horario sugerido tiene en cuenta ventanas de preparación cortas', function () {
+  var exs = [
+    examen('e1', 'qui', '2026-11-25', ['redox', 'acidobase', 'equilibrio'], 2, { inicio: '2026-11-16' }),
+    examen('e2', 'mat2', '2026-11-12', ['primit', 'integdef'], 2, { inicio: '2026-11-04' })
+  ];
+  var sug = P.sugerirHorario({ hoy: '2026-11-04', examenes: exs, sesion: 50, descanso: 10 });
+  var r = P.generar({ hoy: '2026-11-04', examenes: exs, disponibilidad: { semanal: sug.semanal, excepciones: sug.especiales }, sesion: 50, descanso: 10, hechas: {} });
+  assert.strictEqual(r.avisos.filter(function (a) { return a.nivel === 'alto'; }).length, 0, JSON.stringify(r.avisos));
+});
+
 console.log('\n' + pruebas + ' pruebas superadas');

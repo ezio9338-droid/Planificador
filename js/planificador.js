@@ -222,7 +222,7 @@
           var t = {
             id: id, examen: ex, asignatura: asig, tema: tema, tipo: def.tipo, indice: indice,
             esencial: def.esencial, gap: def.gap || 0, duracion: ctx.sesion,
-            cadena: cadena, posCadena: i, deadline: ultimo, notBefore: inicio,
+            cadena: cadena, posCadena: i, deadline: ultimo, notBefore: inicio, minFecha: inicio,
             hecha: !!ctx.hechas[id], fechaHecha: ctx.hechas[id] ? ctx.hechas[id].fecha : null
           };
           cadena.push(t);
@@ -344,6 +344,8 @@
           for (var i = 0; i < pendientes.length; i++) {
             var t = pendientes[i];
             if (t.deadline < d || t.duracion > libre) continue;
+            // Nunca antes de la fecha en la que el alumno quiere empezar a preparar el examen.
+            if (t.minFecha && d < t.minFecha) continue;
             var adelantoDias = 0;
             if (t.notBefore > d) {
               // Se puede adelantar el estudio unos días si hay huecos libres (nunca los repasos finales).
@@ -444,10 +446,17 @@
     // a huecos libres cercanos y, como último recurso, se recortan tareas extra.
     var recorte = {};
     var res, construido, recortado = {};
+    var noHoy = {};
+    (op.noHoy || []).forEach(function (id) { noHoy[id] = true; });
+    var manana = sumarDias(op.hoy, 1);
     var adelantos = [0, 3, 7];
     var nivelAdelanto = 0;
     for (var iter = 0; iter < 30; iter++) {
       construido = construirTareas(ctx, recorte);
+      // Tareas que el alumno ha aplazado hoy: a partir de mañana.
+      construido.tareas.forEach(function (t) {
+        if (noHoy[t.id] && (!t.minFecha || t.minFecha < manana)) t.minFecha = manana;
+      });
       res = programar(construido.tareas, ctx, adelantos[nivelAdelanto]);
       if (!res.sinProgramar.length) break;
       if (nivelAdelanto < adelantos.length - 1) { nivelAdelanto++; continue; }
@@ -529,7 +538,81 @@
     return total;
   }
 
+  /*
+   * Propone un horario de estudio suficiente para preparar los exámenes.
+   * op = { hoy, examenes (mismo formato que generar), sesion, descanso,
+   *        inicioTarde: '17:00' (lunes a viernes), inicioFinde: '10:30' (sábado y domingo) }
+   * Devuelve { semanal, especiales, bloquesDia, minutosDia } o null si no hay exámenes próximos.
+   *   semanal:    semana tipo con las sesiones de un día normal.
+   *   especiales: días concretos (recta final de los exámenes) que necesitan más tiempo.
+   */
+  function sugerirHorario(op) {
+    var sesion = op.sesion || 50, descanso = op.descanso == null ? 10 : op.descanso;
+    var ciclo = sesion + descanso;
+    var exs = (op.examenes || []).filter(function (e) { return sumarDias(e.fecha, -1) >= op.hoy; });
+    if (!exs.length) return null;
+
+    // Carga estimada de cada día: el estudio de cada examen se reparte entre sus días de preparación
+    // y la recta final (repasos finales, simulacro y víspera) entre su último ~25 % de días,
+    // igual que hace el planificador.
+    var carga = {};
+    function repartir(min, ini, fin) {
+      var n = diasEntre(ini, fin) + 1;
+      for (var d = ini; d <= fin; d = sumarDias(d, 1)) carga[d] = (carga[d] || 0) + min / n;
+    }
+    var recta = {};
+    exs.forEach(function (ex) {
+      var ini = ex.inicio && ex.inicio > op.hoy ? ex.inicio : op.hoy;
+      var fin = sumarDias(ex.fecha, -1);
+      var M = diasEntre(ini, fin) + 1;
+      var finalK = M >= 4 ? Math.max(2, Math.round(M * 0.25)) : M;
+      var estudio = 0, final = Math.min(sesion, 45) + descanso;
+      ex.temas.forEach(function (t) {
+        var nb = bloquesTema(t, sesion);
+        estudio += nb * ciclo;
+        if (nb >= 3) { estudio -= ciclo; final += ciclo; }
+      });
+      if (ex.temas.length >= 2 || ex.tipo === 'pau') final += (ex.duracion || 60) + descanso;
+      var inicioRecta = sumarDias(fin, -finalK + 1);
+      if (inicioRecta > ini) {
+        repartir(estudio, ini, sumarDias(inicioRecta, -1));
+        repartir(final, inicioRecta, fin);
+        for (var d = inicioRecta; d <= fin; d = sumarDias(d, 1)) recta[d] = true;
+      } else {
+        repartir(estudio + final, ini, fin);
+      }
+    });
+
+    // Margen del 20 % para imprevistos.
+    function bloquesPara(min) { return Math.min(6, Math.max(1, Math.ceil(min * 1.2 / ciclo))); }
+    var dias = Object.keys(carga);
+    var normales = dias.filter(function (d) { return !recta[d]; });
+    var base = 1;
+    (normales.length ? normales : dias).forEach(function (d) { base = Math.max(base, bloquesPara(carga[d])); });
+    base = Math.min(base, 4);
+
+    function franja(ini, bloques) {
+      var duracion = bloques * ciclo - descanso;
+      var m = Math.min(horaAMin(ini), 23 * 60 + 59 - duracion);
+      return [{ ini: minAHora(m), fin: minAHora(m + duracion) }];
+    }
+    function inicioDe(d) {
+      var dia = parseFecha(d).getDay();
+      return dia === 0 || dia === 6 ? (op.inicioFinde || '10:30') : (op.inicioTarde || '17:00');
+    }
+    var semanal = {};
+    [1, 2, 3, 4, 5].forEach(function (d) { semanal[d] = franja(op.inicioTarde || '17:00', base); });
+    [6, 0].forEach(function (d) { semanal[d] = franja(op.inicioFinde || '10:30', base); });
+    var especiales = {};
+    dias.sort().forEach(function (d) {
+      var b = bloquesPara(carga[d]);
+      if (b > base) especiales[d] = franja(inicioDe(d), b);
+    });
+    return { semanal: semanal, especiales: especiales, bloquesDia: base, minutosDia: base * sesion };
+  }
+
   var Planificador = {
+    sugerirHorario: sugerirHorario,
     generar: generar,
     franjasDelDia: franjasDelDia,
     minutosSemana: minutosSemana,

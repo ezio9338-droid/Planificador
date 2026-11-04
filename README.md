@@ -8,9 +8,9 @@ Aplicación web para el alumnado de **2º de Bachillerato** (Andalucía). Antes 
 - **Exámenes por periodos**: se añaden los exámenes del siguiente periodo seguidos con «Guardar y añadir otro». La preparación empieza por defecto 14 días antes (30 días en la PAU).
 - **Valoración de los temas del examen** («Lo domino», «Regular», «Me cuesta»), solo de los temas que entran: cuanto más cuesta un tema, más sesiones recibe. Si un tema no está valorado, la pantalla Hoy lo pregunta antes de estudiarlo.
 - **Temario PAU** de consulta con los temas, la estructura del examen y los consejos de corrección de cada asignatura.
-- **Horario por franjas** para cada día de la semana, días sin estudio y días con un horario especial.
+- **Horario sugerido**: al añadir los exámenes, la app calcula el tiempo necesario y propone una semana tipo, con más tiempo los días previos a los exámenes. El alumno la ajusta a su semana real: franjas por día, días sin estudio y días con horario especial.
 - **Plan automático**: por cada tema, una sesión de estudio, prácticas, un repaso espaciado y un repaso final. Por cada examen, un simulacro y un repaso ligero la víspera. Cuando no da tiempo, la app avisa y recorta primero las tareas extra.
-- **Seguimiento**: el alumno marca las sesiones hechas. Si se salta alguna, el plan se reorganiza solo al día siguiente.
+- **Seguimiento**: el alumno marca las sesiones hechas y puede aplazar a otro día las que no pueda hacer. Lo que no se marca se reorganiza solo al día siguiente, también con la app abierta.
 - **Exportación** a PDF (imprimir o guardar como PDF) y a calendario `.ics` (Apple, Google, Outlook).
 - **Privacidad**: los datos se guardan solo en el navegador del alumno. No hay servidor ni cuentas. Desde «Más» se puede descargar o restaurar una copia de seguridad.
 - Pensada para **iPad** y móvil. Se puede añadir a la pantalla de inicio y funciona sin conexión.
